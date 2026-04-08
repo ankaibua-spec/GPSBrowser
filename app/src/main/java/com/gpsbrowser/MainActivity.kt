@@ -487,18 +487,17 @@ class MainActivity : AppCompatActivity() {
                 <script>
                     async function checkIP() {
                         try {
-                            const r = await fetch('https://ipwho.is/');
+                            const r = await fetch('https://freeipapi.com/api/json');
                             const raw = await r.json();
-                            if (raw.success === false) throw new Error(raw.message || 'API error');
-                            // Map ipwho.is response to ipapi.co schema
+                            // Map freeipapi.com to common schema
                             const d = {
-                                ip: raw.ip,
-                                country_name: raw.country,
-                                country_code: raw.country_code,
-                                region: raw.region,
-                                city: raw.city,
-                                org: raw.connection ? raw.connection.isp : 'N/A',
-                                timezone: raw.timezone ? raw.timezone.id : 'N/A',
+                                ip: raw.ipAddress,
+                                country_name: raw.countryName,
+                                country_code: raw.countryCode,
+                                region: raw.regionName,
+                                city: raw.cityName,
+                                org: 'N/A',
+                                timezone: raw.timeZone,
                                 latitude: raw.latitude,
                                 longitude: raw.longitude
                             };
