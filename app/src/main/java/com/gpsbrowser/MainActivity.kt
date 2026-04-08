@@ -260,12 +260,10 @@ class MainActivity : AppCompatActivity() {
                     lowUrl.contains("ipgeo.io") ||
                     lowUrl.contains("api.country.is") ||
                     lowUrl.contains("findip.net") ||
-                    // Pattern regex chinh xac - tranh nham /tip, /clip, /recipe...
-                    // Phai co json + path that su la /ip hoac /geo + KHONG phai alpha-ecc
-                    (!lowUrl.contains("alpha-ecc") && lowUrl.contains("json") && (
-                        Regex("[/.](geoip|ipgeo)[/.?]").containsMatchIn(lowUrl) ||
-                        Regex("/(api/)?(ip|geo|geolocation|location)(/|\\?|$)").containsMatchIn(lowUrl)
-                    ))
+                    // Pattern regex CHAT - chi match /ip /geoip /ipgeo (KHONG match /location, /geocode...)
+                    // Phai co json + path khop chat + KHONG phai alpha-ecc
+                    (!lowUrl.contains("alpha-ecc") && lowUrl.contains("json") &&
+                        Regex("""[/.](ip|geoip|ipgeo)[/.?]""").containsMatchIn(lowUrl))
                 )
 
                 if (isIpApi) {
@@ -644,11 +642,10 @@ class MainActivity : AppCompatActivity() {
                     for (var i=0;i<patterns.length;i++) {
                         if (u.indexOf(patterns[i]) >= 0) return true;
                     }
-                    // Heuristic CHAT: phai co json + path that su la /ip hoac /geo
-                    // Dung regex de tranh false positive (vd /tip, /clip, /recipe)
+                    // Heuristic CHAT: phai co json + path that su la /ip /geoip /ipgeo
+                    // KHONG match /location, /geocode, /geo (qua rong, false positive Google Maps)
                     if (u.indexOf('json') < 0) return false;
-                    if (/[/.](geoip|ipgeo)[/.?]/i.test(u)) return true;
-                    if (/\/(api\/)?(ip|geo|geolocation|location)(\/|\?|$)/i.test(u)) return true;
+                    if (/[/.](ip|geoip|ipgeo)[/.?]/i.test(u)) return true;
                     return false;
                 }
 
@@ -662,15 +659,38 @@ class MainActivity : AppCompatActivity() {
 
                 // ===== Override fetch =====
                 var origFetch = window.fetch;
+                // Helper: check bypass header in any format (Headers/object/array/lowercase)
+                function hasBypassHeader(h) {
+                    if (!h) return false;
+                    var key = 'x-gpsbrowser-bypass';
+                    // Headers object
+                    if (typeof h.get === 'function') {
+                        var v = h.get('X-GPSBrowser-Bypass') || h.get(key);
+                        if (v === '1') return true;
+                    }
+                    // Array of [k,v]
+                    if (Array.isArray(h)) {
+                        for (var i=0;i<h.length;i++) {
+                            if (h[i] && h[i].length >= 2 &&
+                                String(h[i][0]).toLowerCase() === key &&
+                                String(h[i][1]) === '1') return true;
+                        }
+                        return false;
+                    }
+                    // Plain object
+                    for (var k in h) {
+                        if (String(k).toLowerCase() === key && String(h[k]) === '1') return true;
+                    }
+                    return false;
+                }
+
                 window.fetch = function(input, init) {
                     var url = (typeof input === 'string') ? input : (input && input.url);
-                    // Bypass header
                     var bypass = false;
-                    if (init && init.headers) {
-                        var h = init.headers;
-                        if (h['X-GPSBrowser-Bypass'] === '1') bypass = true;
-                        if (typeof h.get === 'function' && h.get('X-GPSBrowser-Bypass') === '1') bypass = true;
-                    }
+                    // Check init.headers
+                    if (init && hasBypassHeader(init.headers)) bypass = true;
+                    // Check Request object headers
+                    if (input && typeof input === 'object' && input.headers && hasBypassHeader(input.headers)) bypass = true;
                     if (!bypass && isIpGeoUrl(url)) {
                         console.log('[GPSBrowser] Faking fetch:', url);
                         var body = JSON.stringify(fakeJson);
@@ -703,7 +723,10 @@ class MainActivity : AppCompatActivity() {
                     };
 
                     xhr.open = function(method, url) {
-                        if (!bypass && isIpGeoUrl(url)) {
+                        // Reset state moi cycle (XHR co the reuse: open->send->open->send)
+                        bypass = false;
+                        fakedUrl = null;
+                        if (isIpGeoUrl(url)) {
                             fakedUrl = url;
                         }
                         return origOpen.apply(xhr, arguments);
