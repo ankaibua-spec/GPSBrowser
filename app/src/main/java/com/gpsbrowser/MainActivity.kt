@@ -63,10 +63,13 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl(HOME_URL)
 
         // Check update silent (delay 2s de khong block UI)
+        updateChecker = UpdateChecker(this)
         webView.postDelayed({
-            UpdateChecker(this).checkForUpdate(silent = true)
+            updateChecker?.checkForUpdate(silent = true)
         }, 2000)
     }
+
+    private var updateChecker: UpdateChecker? = null
 
     // ========== Fixed location (custom coordinates) ==========
 
@@ -414,7 +417,7 @@ class MainActivity : AppCompatActivity() {
         btnRefresh.setOnClickListener { webView.reload() }
         btnHome.setOnClickListener { webView.loadUrl(HOME_URL) }
         btnHome.setOnLongClickListener {
-            UpdateChecker(this).checkForUpdate(silent = false)
+            updateChecker?.checkForUpdate(silent = false)
             true
         }
 
@@ -540,7 +543,13 @@ class MainActivity : AppCompatActivity() {
     // ========== Inject JS override Geolocation ==========
 
     private fun injectGeolocationOverride() {
-        if (!hasLocation) return
+        // Cung khong gate - dung fixed default neu chua co GPS
+        if (!hasLocation && !useFixedLocation) {
+            // Set default tu fixed coords da save trong prefs
+            currentLat = 10.404246840349387
+            currentLng = 107.11750153452158
+            hasLocation = true
+        }
 
         val js = """
             (function() {
@@ -592,10 +601,11 @@ class MainActivity : AppCompatActivity() {
     // ========== Lop 2: JS-level fetch/XHR override de bat IP API la ==========
 
     private fun injectFetchInterceptor() {
-        if (!hasLocation) return
-
-        val lat = currentLat
-        val lng = currentLng
+        // KHONG gate boi hasLocation - phai install hook NGAY cho moi page
+        // de tranh race: page load truoc khi GPS callback fire
+        // Default coords (Vung Tau) neu chua co location
+        val lat = if (hasLocation) currentLat else 10.404246840349387
+        val lng = if (hasLocation) currentLng else 107.11750153452158
 
         val js = """
             (function() {
@@ -906,6 +916,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         // Tranh leak Activity context
+        updateChecker?.cleanup()
         try {
             webView.stopLoading()
             webView.removeAllViews()

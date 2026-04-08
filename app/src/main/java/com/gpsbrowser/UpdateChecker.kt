@@ -1,5 +1,6 @@
 package com.gpsbrowser
 
+import android.app.Activity
 import android.app.AlertDialog
 import android.app.DownloadManager
 import android.content.BroadcastReceiver
@@ -18,12 +19,23 @@ import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
 
-class UpdateChecker(private val context: Context) {
+class UpdateChecker(private val activity: Activity) {
+    private val context: Context = activity
+    private var downloadReceiver: BroadcastReceiver? = null
 
     companion object {
         private const val TAG = "UpdateChecker"
         private const val VERSION_URL = "http://31.97.189.245/dl/gpsbrowser_version.json"
         private const val APK_FILENAME = "GPSBrowser.apk"
+    }
+
+    fun cleanup() {
+        try {
+            downloadReceiver?.let { context.unregisterReceiver(it) }
+        } catch (e: Exception) {
+            Log.w(TAG, "Receiver already unregistered", e)
+        }
+        downloadReceiver = null
     }
 
     fun checkForUpdate(silent: Boolean = false) {
@@ -48,11 +60,11 @@ class UpdateChecker(private val context: Context) {
                 Log.i(TAG, "Local: $localVersionCode, Remote: $remoteVersionCode")
 
                 if (remoteVersionCode > localVersionCode) {
-                    (context as? MainActivity)?.runOnUiThread {
+                    activity.runOnUiThread {
                         showUpdateDialog(remoteVersionName, changelog, apkUrl)
                     }
                 } else if (!silent) {
-                    (context as? MainActivity)?.runOnUiThread {
+                    activity.runOnUiThread {
                         Toast.makeText(context, "Đã là bản mới nhất ($remoteVersionName)", Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -91,21 +103,23 @@ class UpdateChecker(private val context: Context) {
             val downloadId = dm.enqueue(request)
             Toast.makeText(context, "Đang tải bản mới...", Toast.LENGTH_SHORT).show()
 
-            val receiver = object : BroadcastReceiver() {
+            // Cleanup receiver cu (neu user trigger lai mid-download)
+            cleanup()
+            downloadReceiver = object : BroadcastReceiver() {
                 override fun onReceive(ctx: Context, intent: Intent) {
                     val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
                     if (id == downloadId) {
-                        try { context.unregisterReceiver(this) } catch (e: Exception) {}
+                        cleanup()
                         installApk(File(downloadDir, APK_FILENAME))
                     }
                 }
             }
             val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+                context.registerReceiver(downloadReceiver, filter, Context.RECEIVER_EXPORTED)
             } else {
                 @Suppress("UnspecifiedRegisterReceiverFlag")
-                context.registerReceiver(receiver, filter)
+                context.registerReceiver(downloadReceiver, filter)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Download failed", e)

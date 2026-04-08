@@ -37,23 +37,31 @@ jobs:
       - name: Extract version info
         id: version
         run: |
-          VERSION_CODE=$(grep "versionCode" app/build.gradle | head -1 | awk '{print $2}')
-          VERSION_NAME=$(grep "versionName" app/build.gradle | head -1 | awk '{print $2}' | tr -d '"')
+          # Dung sed regex chinh xac, khong phu thuoc whitespace
+          VERSION_CODE=$(sed -n 's/^[[:space:]]*versionCode[[:space:]]\+\([0-9]\+\).*/\1/p' app/build.gradle | head -1)
+          VERSION_NAME=$(sed -n 's/^[[:space:]]*versionName[[:space:]]\+"\([^"]*\)".*/\1/p' app/build.gradle | head -1)
+          if [ -z "$VERSION_CODE" ] || [ -z "$VERSION_NAME" ]; then
+            echo "ERROR: Cannot extract version from build.gradle"
+            exit 1
+          fi
           echo "code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
       - name: Generate version.json
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
         run: |
-          CHANGELOG=$(git log -1 --pretty=%B | head -5 | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
-          cat > gpsbrowser_version.json <<EOF
-          {
-            "version": "${{ steps.version.outputs.name }}",
-            "versionCode": ${{ steps.version.outputs.code }},
-            "url": "http://31.97.189.245/dl/GPSBrowser.apk",
-            "changelog": "$CHANGELOG"
-          }
-          EOF
+          # Dung jq de safe escape JSON (handle quotes, backslash, newline, control chars)
+          CHANGELOG=$(git log -1 --pretty=%B | head -10)
+          jq -n \
+            --arg version "$VERSION_NAME" \
+            --argjson versionCode "$VERSION_CODE" \
+            --arg url "http://31.97.189.245/dl/GPSBrowser.apk" \
+            --arg changelog "$CHANGELOG" \
+            '{version: $version, versionCode: $versionCode, url: $url, changelog: $changelog}' \
+            > gpsbrowser_version.json
           cat gpsbrowser_version.json
 
       - name: Publish APK + version.json to VPS
