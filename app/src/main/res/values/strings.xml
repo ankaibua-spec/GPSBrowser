@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">GPS Browser</string>
     <color name="progress_color">#00d2ff</color>
+    <color name="ic_launcher_background">#1976D2</color>
 </resources>
