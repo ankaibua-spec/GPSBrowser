@@ -25,7 +25,7 @@ class UpdateChecker(private val activity: Activity) {
 
     companion object {
         private const val TAG = "UpdateChecker"
-        private const val VERSION_URL = "http://31.97.189.245/dl/gpsbrowser_version.json"
+        private const val VERSION_URL = "https://app.trbm.shop/dl/gpsbrowser_version.json"
         private const val APK_FILENAME = "GPSBrowser.apk"
     }
 
@@ -44,7 +44,6 @@ class UpdateChecker(private val activity: Activity) {
                 val conn = URL(VERSION_URL).openConnection() as HttpURLConnection
                 conn.connectTimeout = 5000
                 conn.readTimeout = 5000
-                conn.setRequestProperty("X-GPSBrowser-Bypass", "1")
                 if (conn.responseCode != 200) return@thread
 
                 val text = conn.inputStream.bufferedReader().use { it.readText() }

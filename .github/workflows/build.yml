@@ -58,7 +58,7 @@ jobs:
           jq -n \
             --arg version "$VERSION_NAME" \
             --argjson versionCode "$VERSION_CODE" \
-            --arg url "http://31.97.189.245/dl/GPSBrowser.apk" \
+            --arg url "https://app.trbm.shop/dl/GPSBrowser.apk" \
             --arg changelog "$CHANGELOG" \
             '{version: $version, versionCode: $versionCode, url: $url, changelog: $changelog}' \
             > gpsbrowser_version.json

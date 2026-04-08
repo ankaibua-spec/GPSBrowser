@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Default: HTTPS only, block cleartext -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Cho phep HTTP cho ip-api.com (web Alpha ECC goi qua ip-api co http) -->
+    <!-- Da bi intercept va tra fake response, nhung van can permit -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">ip-api.com</domain>
+        <domain includeSubdomains="false">31.97.189.245</domain>
+    </domain-config>
+</network-security-config>
