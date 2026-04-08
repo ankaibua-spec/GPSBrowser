@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GPS Browser</string>
+    <color name="progress_color">#00d2ff</color>
+</resources>
