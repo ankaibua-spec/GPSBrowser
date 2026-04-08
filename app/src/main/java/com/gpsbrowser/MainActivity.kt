@@ -241,8 +241,8 @@ class MainActivity : AppCompatActivity() {
                     lowUrl.contains("ipgeo.io") ||
                     lowUrl.contains("api.country.is") ||
                     lowUrl.contains("findip.net") ||
-                    // Pattern wildcard: chua "ip" + "geo"/"loc"/"json" trong path
-                    (lowUrl.contains("/geo") && (lowUrl.contains(".json") || lowUrl.contains("/json"))) ||
+                    // Pattern wildcard - exclude same-origin (alpha-ecc va cac web cong ty)
+                    (lowUrl.contains("/geo") && (lowUrl.contains(".json") || lowUrl.contains("/json")) && !lowUrl.contains("alpha-ecc")) ||
                     (lowUrl.contains("/ip") && lowUrl.contains("/json") && !lowUrl.contains("alpha-ecc"))
                 )
 
