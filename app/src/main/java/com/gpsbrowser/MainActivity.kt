@@ -182,15 +182,19 @@ class MainActivity : AppCompatActivity() {
                 super.onPageStarted(view, url, favicon)
                 progressBar.visibility = View.VISIBLE
                 url?.let { urlBar.setText(it) }
+                // Inject SOM (truoc khi web JS chay) - quan trong cho fetch/XHR override
+                injectGeolocationOverride()
+                injectFetchInterceptor()
+                blockWebRTCLeak()
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 progressBar.visibility = View.GONE
                 updateNavButtons()
-                // Inject geolocation override sau khi trang load
+                // Inject lai sau khi load xong (phong khi web reset)
                 injectGeolocationOverride()
-                // Chặn WebRTC leak
+                injectFetchInterceptor()
                 blockWebRTCLeak()
             }
 
@@ -213,34 +217,92 @@ class MainActivity : AppCompatActivity() {
                 val lat = currentLat
                 val lng = currentLng
 
-                return when {
-                    // ipbase.com schema
-                    url.contains("api.ipbase.com") -> {
-                        val json = """{"ip":"113.161.0.1","country_code":"VN","country_name":"Vietnam","region_code":"57","region_name":"Ba Ria - Vung Tau","city":"Vung Tau","zip_code":"790000","time_zone":"Asia/Ho_Chi_Minh","latitude":$lat,"longitude":$lng,"metro_code":0}"""
-                        makeJsonResponse(json)
-                    }
-                    // ip-api.com schema (lat/lon)
-                    url.contains("ip-api.com") -> {
-                        val json = """{"status":"success","country":"Vietnam","countryCode":"VN","region":"57","regionName":"Ba Ria - Vung Tau","city":"Vung Tau","zip":"790000","lat":$lat,"lon":$lng,"timezone":"Asia/Ho_Chi_Minh","isp":"Viettel","org":"Viettel","as":"AS7552","query":"113.161.0.1"}"""
-                        makeJsonResponse(json)
-                    }
-                    // ipapi.co schema
-                    url.contains("ipapi.co") -> {
-                        val json = """{"ip":"113.161.0.1","country_name":"Vietnam","country_code":"VN","region":"Ba Ria - Vung Tau","city":"Vung Tau","latitude":$lat,"longitude":$lng,"timezone":"Asia/Ho_Chi_Minh","org":"Viettel"}"""
-                        makeJsonResponse(json)
-                    }
-                    // ipwho.is schema
-                    url.contains("ipwho.is") -> {
-                        val json = """{"ip":"113.161.0.1","success":true,"country":"Vietnam","country_code":"VN","region":"Ba Ria - Vung Tau","city":"Vung Tau","latitude":$lat,"longitude":$lng,"timezone":{"id":"Asia/Ho_Chi_Minh"},"connection":{"isp":"Viettel"}}"""
-                        makeJsonResponse(json)
-                    }
-                    // freeipapi.com schema
-                    url.contains("freeipapi.com") -> {
-                        val json = """{"ipVersion":4,"ipAddress":"113.161.0.1","latitude":$lat,"longitude":$lng,"countryName":"Vietnam","countryCode":"VN","timeZone":"+07:00","zipCode":"790000","cityName":"Vung Tau","regionName":"Ba Ria - Vung Tau"}"""
-                        makeJsonResponse(json)
-                    }
-                    else -> null
+                // Universal IP geolocation API intercept
+                // Bat ca URL chua tu khoa "ip", "geo", "location" + ".com/.io/.net..."
+                val lowUrl = url.lowercase()
+                val isIpApi = (
+                    lowUrl.contains("api.ipbase.com") ||
+                    lowUrl.contains("ip-api.com") ||
+                    lowUrl.contains("ipapi.co") ||
+                    lowUrl.contains("ipwho.is") ||
+                    lowUrl.contains("ipwhois.app") ||
+                    lowUrl.contains("freeipapi.com") ||
+                    lowUrl.contains("ipinfo.io") ||
+                    lowUrl.contains("ipgeolocation.io") ||
+                    lowUrl.contains("ipify.org") ||
+                    lowUrl.contains("ipdata.co") ||
+                    lowUrl.contains("ipstack.com") ||
+                    lowUrl.contains("geoip-db.com") ||
+                    lowUrl.contains("geojs.io") ||
+                    lowUrl.contains("db-ip.com") ||
+                    lowUrl.contains("ipregistry.co") ||
+                    lowUrl.contains("iplocation.net") ||
+                    lowUrl.contains("ip2location.io") ||
+                    lowUrl.contains("ipgeo.io") ||
+                    lowUrl.contains("api.country.is") ||
+                    lowUrl.contains("findip.net") ||
+                    // Pattern wildcard: chua "ip" + "geo"/"loc"/"json" trong path
+                    (lowUrl.contains("/geo") && (lowUrl.contains(".json") || lowUrl.contains("/json"))) ||
+                    (lowUrl.contains("/ip") && lowUrl.contains("/json") && !lowUrl.contains("alpha-ecc"))
+                )
+
+                if (isIpApi) {
+                    // Universal JSON containing TAT CA field name pho bien
+                    // Web nao parse field nao thi cung khop
+                    val json = """{
+                        "ip":"113.161.0.1",
+                        "ipAddress":"113.161.0.1",
+                        "ipVersion":4,
+                        "version":"IPv4",
+                        "query":"113.161.0.1",
+                        "country":"Vietnam",
+                        "country_name":"Vietnam",
+                        "countryName":"Vietnam",
+                        "country_code":"VN",
+                        "countryCode":"VN",
+                        "country_code_iso3":"VNM",
+                        "region":"Ba Ria - Vung Tau",
+                        "region_name":"Ba Ria - Vung Tau",
+                        "regionName":"Ba Ria - Vung Tau",
+                        "region_code":"57",
+                        "regionCode":"57",
+                        "state":"Ba Ria - Vung Tau",
+                        "city":"Vung Tau",
+                        "cityName":"Vung Tau",
+                        "zip":"790000",
+                        "zip_code":"790000",
+                        "zipCode":"790000",
+                        "postal":"790000",
+                        "latitude":$lat,
+                        "lat":$lat,
+                        "longitude":$lng,
+                        "lon":$lng,
+                        "lng":$lng,
+                        "loc":"$lat,$lng",
+                        "location":{"latitude":$lat,"longitude":$lng,"lat":$lat,"lng":$lng,"lon":$lng},
+                        "coordinates":{"latitude":$lat,"longitude":$lng},
+                        "geo":{"latitude":$lat,"longitude":$lng,"lat":$lat,"lng":$lng,"lon":$lng,"city":"Vung Tau","country":"Vietnam"},
+                        "timezone":"Asia/Ho_Chi_Minh",
+                        "time_zone":"Asia/Ho_Chi_Minh",
+                        "timeZone":"+07:00",
+                        "utc_offset":"+0700",
+                        "isp":"Viettel Corporation",
+                        "org":"Viettel Corporation",
+                        "asn":"AS7552",
+                        "as":"AS7552 Viettel Corporation",
+                        "connection":{"isp":"Viettel Corporation","org":"Viettel","asn":7552},
+                        "currency":"VND",
+                        "languages":"vi",
+                        "calling_code":"84",
+                        "status":"success",
+                        "success":true,
+                        "continent_code":"AS",
+                        "continent":"Asia"
+                    }""".trimIndent().replace("\n", "").replace("  ", "")
+                    return makeJsonResponse(json)
                 }
+
+                return null
             }
 
             private fun makeJsonResponse(json: String): WebResourceResponse {
@@ -481,23 +543,133 @@ class MainActivity : AppCompatActivity() {
     // ========== Chặn WebRTC leak ==========
 
     private fun blockWebRTCLeak() {
+        // Chi chan RTCPeerConnection (lo IP), KHONG chan getUserMedia (can cho QR camera)
         val js = """
             (function() {
-                // Disable WebRTC to prevent IP leak
-                if (window.RTCPeerConnection) {
-                    window.RTCPeerConnection = undefined;
+                if (window.RTCPeerConnection) window.RTCPeerConnection = undefined;
+                if (window.webkitRTCPeerConnection) window.webkitRTCPeerConnection = undefined;
+                if (window.mozRTCPeerConnection) window.mozRTCPeerConnection = undefined;
+            })();
+        """.trimIndent()
+
+        webView.evaluateJavascript(js, null)
+    }
+
+    // ========== Lop 2: JS-level fetch/XHR override de bat IP API la ==========
+
+    private fun injectFetchInterceptor() {
+        if (!hasLocation) return
+
+        val lat = currentLat
+        val lng = currentLng
+
+        val js = """
+            (function() {
+                if (window.__gpsBrowserFetchHooked) return;
+                window.__gpsBrowserFetchHooked = true;
+
+                var fakeLat = $lat;
+                var fakeLng = $lng;
+
+                // JSON gia chua TAT CA field name pho bien
+                var fakeJson = {
+                    ip:"113.161.0.1", ipAddress:"113.161.0.1", query:"113.161.0.1",
+                    country:"Vietnam", country_name:"Vietnam", countryName:"Vietnam",
+                    country_code:"VN", countryCode:"VN",
+                    region:"Ba Ria - Vung Tau", region_name:"Ba Ria - Vung Tau", regionName:"Ba Ria - Vung Tau",
+                    city:"Vung Tau", cityName:"Vung Tau",
+                    zip:"790000", zip_code:"790000", postal:"790000",
+                    latitude:fakeLat, lat:fakeLat,
+                    longitude:fakeLng, lon:fakeLng, lng:fakeLng,
+                    loc: fakeLat + "," + fakeLng,
+                    location:{latitude:fakeLat, longitude:fakeLng, lat:fakeLat, lng:fakeLng, lon:fakeLng},
+                    geo:{latitude:fakeLat, longitude:fakeLng, city:"Vung Tau", country:"Vietnam"},
+                    timezone:"Asia/Ho_Chi_Minh", time_zone:"Asia/Ho_Chi_Minh",
+                    isp:"Viettel Corporation", org:"Viettel Corporation",
+                    asn:"AS7552", as:"AS7552 Viettel Corporation",
+                    success:true, status:"success"
+                };
+
+                // Pattern de phat hien IP geolocation API
+                function isIpGeoUrl(url) {
+                    if (!url) return false;
+                    var u = String(url).toLowerCase();
+                    // Same-origin (alpha-ecc) thi BO QUA - de cong ty xu ly checkin binh thuong
+                    if (u.indexOf(location.hostname) >= 0) return false;
+                    // Pattern domain pho bien
+                    var patterns = [
+                        'ipbase.com','ip-api.com','ipapi.co','ipwho.is','ipwhois.app',
+                        'freeipapi.com','ipinfo.io','ipgeolocation.io','ipify.org',
+                        'ipdata.co','ipstack.com','geoip-db.com','geojs.io','db-ip.com',
+                        'ipregistry.co','iplocation.net','ip2location.io','ipgeo.io',
+                        'country.is','findip.net','iplogger','iplookup','ipfind',
+                        'whoer.net','ipchicken','what-is-my-ip'
+                    ];
+                    for (var i=0;i<patterns.length;i++) {
+                        if (u.indexOf(patterns[i]) >= 0) return true;
+                    }
+                    // Heuristic: URL co "/geo" hoac "/ip" + tra JSON
+                    if ((u.indexOf('/geo') >= 0 || u.indexOf('/ip') >= 0 || u.indexOf('geoip') >= 0) &&
+                        (u.indexOf('json') >= 0 || u.indexOf('.io/') >= 0 || u.indexOf('.com/') >= 0)) {
+                        return true;
+                    }
+                    return false;
                 }
-                if (window.webkitRTCPeerConnection) {
-                    window.webkitRTCPeerConnection = undefined;
-                }
-                if (window.mozRTCPeerConnection) {
-                    window.mozRTCPeerConnection = undefined;
-                }
-                if (navigator.mediaDevices) {
-                    navigator.mediaDevices.getUserMedia = function() {
-                        return Promise.reject(new Error('Not allowed'));
+
+                // ===== Override fetch =====
+                var origFetch = window.fetch;
+                window.fetch = function(input, init) {
+                    var url = (typeof input === 'string') ? input : (input && input.url);
+                    if (isIpGeoUrl(url)) {
+                        console.log('[GPSBrowser] Faking fetch:', url);
+                        var body = JSON.stringify(fakeJson);
+                        return Promise.resolve(new Response(body, {
+                            status: 200,
+                            statusText: 'OK',
+                            headers: {'Content-Type':'application/json'}
+                        }));
+                    }
+                    return origFetch.apply(this, arguments);
+                };
+
+                // ===== Override XMLHttpRequest =====
+                var OrigXHR = window.XMLHttpRequest;
+                function FakeXHR() {
+                    var xhr = new OrigXHR();
+                    var origOpen = xhr.open;
+                    var origSend = xhr.send;
+                    var fakedUrl = null;
+
+                    xhr.open = function(method, url) {
+                        if (isIpGeoUrl(url)) {
+                            fakedUrl = url;
+                        }
+                        return origOpen.apply(xhr, arguments);
                     };
+
+                    xhr.send = function() {
+                        if (fakedUrl) {
+                            console.log('[GPSBrowser] Faking XHR:', fakedUrl);
+                            setTimeout(function() {
+                                Object.defineProperty(xhr, 'readyState', {value: 4, configurable: true});
+                                Object.defineProperty(xhr, 'status', {value: 200, configurable: true});
+                                Object.defineProperty(xhr, 'statusText', {value: 'OK', configurable: true});
+                                Object.defineProperty(xhr, 'responseText', {value: JSON.stringify(fakeJson), configurable: true});
+                                Object.defineProperty(xhr, 'response', {value: JSON.stringify(fakeJson), configurable: true});
+                                if (xhr.onreadystatechange) xhr.onreadystatechange();
+                                if (xhr.onload) xhr.onload();
+                            }, 50);
+                            return;
+                        }
+                        return origSend.apply(xhr, arguments);
+                    };
+
+                    return xhr;
                 }
+                FakeXHR.prototype = OrigXHR.prototype;
+                window.XMLHttpRequest = FakeXHR;
+
+                console.log('[GPSBrowser] Fetch + XHR interceptor installed');
             })();
         """.trimIndent()
 
