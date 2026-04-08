@@ -3,13 +3,16 @@ package com.gpsbrowser
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import android.graphics.Bitmap
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
-import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
@@ -40,12 +43,16 @@ class MainActivity : AppCompatActivity() {
     private val LOCATION_PERMISSION_CODE = 1001
     private val HOME_URL = "https://App.alpha-ecc.com"
 
+    private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+    private lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         initViews()
         loadFixedLocation()
+        setupFileChooser()
         setupWebView()
         setupNavigation()
         setupFixedLocationDialog()
@@ -210,6 +217,56 @@ class MainActivity : AppCompatActivity() {
                 // Tự động cho phép geolocation
                 callback?.invoke(origin, true, false)
             }
+
+            // Cho phép web truy cap camera/mic (de quet QR live)
+            override fun onPermissionRequest(request: PermissionRequest?) {
+                runOnUiThread {
+                    request?.grant(request.resources)
+                }
+            }
+
+            // Ho tro <input type="file"> de upload anh QR
+            override fun onShowFileChooser(
+                webView: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
+            ): Boolean {
+                fileChooserCallback?.onReceiveValue(null)
+                fileChooserCallback = filePathCallback
+                val intent = fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "image/*"
+                }
+                // Cho phep chon nhieu source: gallery + camera
+                val chooser = Intent.createChooser(intent, "Chon anh QR")
+                try {
+                    fileChooserLauncher.launch(chooser)
+                } catch (e: Exception) {
+                    fileChooserCallback = null
+                    return false
+                }
+                return true
+            }
+        }
+    }
+
+    private fun setupFileChooser() {
+        fileChooserLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            val uris: Array<Uri>? = if (result.resultCode == RESULT_OK) {
+                val data = result.data
+                when {
+                    data?.clipData != null -> {
+                        val count = data.clipData!!.itemCount
+                        Array(count) { data.clipData!!.getItemAt(it).uri }
+                    }
+                    data?.data != null -> arrayOf(data.data!!)
+                    else -> null
+                }
+            } else null
+            fileChooserCallback?.onReceiveValue(uris)
+            fileChooserCallback = null
         }
     }
 
@@ -251,16 +308,18 @@ class MainActivity : AppCompatActivity() {
     // ========== GPS - Đọc vị trí từ hệ thống (đã bị fake bởi app) ==========
 
     private fun requestLocationPermission() {
+        val needed = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                ),
-                LOCATION_PERMISSION_CODE
-            )
+            needed.add(Manifest.permission.ACCESS_FINE_LOCATION)
+            needed.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED) {
+            needed.add(Manifest.permission.CAMERA)
+        }
+        if (needed.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, needed.toTypedArray(), LOCATION_PERMISSION_CODE)
         } else {
             startLocationUpdates()
         }
