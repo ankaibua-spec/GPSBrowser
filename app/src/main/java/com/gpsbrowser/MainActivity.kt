@@ -14,6 +14,8 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
+import android.util.Log
+import java.util.Locale
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -40,7 +42,7 @@ class MainActivity : AppCompatActivity() {
     private var currentLng: Double = 0.0
     private var hasLocation = false
 
-    private val LOCATION_PERMISSION_CODE = 1001
+    private val PERMISSION_REQUEST_CODE = 1001
     private val HOME_URL = "https://App.alpha-ecc.com"
 
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
@@ -85,7 +87,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupFixedLocationDialog() {
         if (useFixedLocation) {
-            txtLocation.text = "📌 ${String.format("%.6f", currentLat)}, ${String.format("%.6f", currentLng)} (cố định)"
+            txtLocation.text = "📌 ${String.format(Locale.US, "%.6f", currentLat)}, ${String.format(Locale.US, "%.6f", currentLng)} (cố định)"
         }
         txtLocation.setOnLongClickListener {
             showFixedLocationDialog()
@@ -124,7 +126,7 @@ class MainActivity : AppCompatActivity() {
                             .putFloat("fixed_lat", lat.toFloat())
                             .putFloat("fixed_lng", lng.toFloat())
                             .apply()
-                        txtLocation.text = "📌 ${String.format("%.6f", lat)}, ${String.format("%.6f", lng)} (cố định)"
+                        txtLocation.text = "📌 ${String.format(Locale.US, "%.6f", lat)}, ${String.format(Locale.US, "%.6f", lng)} (cố định)"
                         injectGeolocationOverride()
                         webView.reload()
                         Toast.makeText(this, "Đã đặt toạ độ cố định", Toast.LENGTH_SHORT).show()
@@ -203,6 +205,14 @@ class MainActivity : AppCompatActivity() {
                 if (url.startsWith("http://") || url.startsWith("https://")) {
                     return false
                 }
+                // Cac scheme khac (tel, mailto, intent...) -> mo app ngoai
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Log.w("GPSBrowser", "Cannot handle scheme: $url", e)
+                }
                 return true
             }
 
@@ -213,6 +223,10 @@ class MainActivity : AppCompatActivity() {
             ): WebResourceResponse? {
                 val url = request?.url?.toString() ?: return null
                 if (!hasLocation) return null
+
+                // Bypass: check IP page cua chinh app dung header dac biet de XEM IP THAT
+                val bypassHeader = request.requestHeaders?.get("X-GPSBrowser-Bypass")
+                if (bypassHeader == "1") return null
 
                 val lat = currentLat
                 val lng = currentLng
@@ -241,9 +255,12 @@ class MainActivity : AppCompatActivity() {
                     lowUrl.contains("ipgeo.io") ||
                     lowUrl.contains("api.country.is") ||
                     lowUrl.contains("findip.net") ||
-                    // Pattern wildcard - exclude same-origin (alpha-ecc va cac web cong ty)
-                    (lowUrl.contains("/geo") && (lowUrl.contains(".json") || lowUrl.contains("/json")) && !lowUrl.contains("alpha-ecc")) ||
-                    (lowUrl.contains("/ip") && lowUrl.contains("/json") && !lowUrl.contains("alpha-ecc"))
+                    // Pattern regex chinh xac - tranh nham /tip, /clip, /recipe...
+                    // Phai co json + path that su la /ip hoac /geo + KHONG phai alpha-ecc
+                    (!lowUrl.contains("alpha-ecc") && lowUrl.contains("json") && (
+                        Regex("[/.](geoip|ipgeo)[/.?]").containsMatchIn(lowUrl) ||
+                        Regex("/(api/)?(ip|geo|geolocation|location)(/|\\?|$)").containsMatchIn(lowUrl)
+                    ))
                 )
 
                 if (isIpApi) {
@@ -437,7 +454,7 @@ class MainActivity : AppCompatActivity() {
             needed.add(Manifest.permission.CAMERA)
         }
         if (needed.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, needed.toTypedArray(), LOCATION_PERMISSION_CODE)
+            ActivityCompat.requestPermissions(this, needed.toTypedArray(), PERMISSION_REQUEST_CODE)
         } else {
             startLocationUpdates()
         }
@@ -447,11 +464,20 @@ class MainActivity : AppCompatActivity() {
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == LOCATION_PERMISSION_CODE &&
-            grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode != PERMISSION_REQUEST_CODE) return
+        // Check tung permission theo ten, KHONG dua vao grantResults[0]
+        var locationGranted = false
+        for (i in permissions.indices) {
+            if (i >= grantResults.size) break
+            if (permissions[i] == Manifest.permission.ACCESS_FINE_LOCATION &&
+                grantResults[i] == PackageManager.PERMISSION_GRANTED) {
+                locationGranted = true
+            }
+        }
+        if (locationGranted) {
             startLocationUpdates()
-        } else {
+        } else if (!useFixedLocation) {
+            // Chi hien canh bao khi KHONG dung toa do co dinh
             txtLocation.text = "⚠ Cần quyền GPS"
         }
     }
@@ -466,7 +492,7 @@ class MainActivity : AppCompatActivity() {
                 currentLat = location.latitude
                 currentLng = location.longitude
                 hasLocation = true
-                txtLocation.text = "📍 ${String.format("%.6f", currentLat)}, ${String.format("%.6f", currentLng)}"
+                txtLocation.text = "📍 ${String.format(Locale.US, "%.6f", currentLat)}, ${String.format(Locale.US, "%.6f", currentLng)}"
                 // Override lại geolocation mỗi khi vị trí thay đổi
                 injectGeolocationOverride()
             }
@@ -481,14 +507,14 @@ class MainActivity : AppCompatActivity() {
             locationManager.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER, 3000, 0f, locationListener
             )
-        } catch (e: Exception) { }
+        } catch (e: Exception) { Log.w("GPSBrowser", "GPS provider unavailable", e) }
 
         // Cũng đọc từ NETWORK_PROVIDER
         try {
             locationManager.requestLocationUpdates(
                 LocationManager.NETWORK_PROVIDER, 3000, 0f, locationListener
             )
-        } catch (e: Exception) { }
+        } catch (e: Exception) { Log.w("GPSBrowser", "Network provider unavailable", e) }
 
         // Lấy last known location ngay lập tức
         try {
@@ -499,9 +525,9 @@ class MainActivity : AppCompatActivity() {
                 currentLat = last.latitude
                 currentLng = last.longitude
                 hasLocation = true
-                txtLocation.text = "📍 ${String.format("%.6f", currentLat)}, ${String.format("%.6f", currentLng)}"
+                txtLocation.text = "📍 ${String.format(Locale.US, "%.6f", currentLat)}, ${String.format(Locale.US, "%.6f", currentLng)}"
             }
-        } catch (e: Exception) { }
+        } catch (e: Exception) { Log.w("GPSBrowser", "getLastKnownLocation failed", e) }
     }
 
     // ========== Inject JS override Geolocation ==========
@@ -525,12 +551,13 @@ class MainActivity : AppCompatActivity() {
                 };
 
                 navigator.geolocation.getCurrentPosition = function(success, error, options) {
-                    if (success) success(fakePos);
+                    // Async (microtask) - chuan W3C Geolocation API
+                    setTimeout(function() { if (success) success(fakePos); }, 0);
                 };
 
                 navigator.geolocation.watchPosition = function(success, error, options) {
-                    if (success) success(fakePos);
-                    return 0;
+                    setTimeout(function() { if (success) success(fakePos); }, 0);
+                    return Math.floor(Math.random() * 1000) + 1;
                 };
 
                 navigator.geolocation.clearWatch = function(id) {};
@@ -608,19 +635,34 @@ class MainActivity : AppCompatActivity() {
                     for (var i=0;i<patterns.length;i++) {
                         if (u.indexOf(patterns[i]) >= 0) return true;
                     }
-                    // Heuristic: URL co "/geo" hoac "/ip" + tra JSON
-                    if ((u.indexOf('/geo') >= 0 || u.indexOf('/ip') >= 0 || u.indexOf('geoip') >= 0) &&
-                        (u.indexOf('json') >= 0 || u.indexOf('.io/') >= 0 || u.indexOf('.com/') >= 0)) {
-                        return true;
-                    }
+                    // Heuristic CHAT: phai co json + path that su la /ip hoac /geo
+                    // Dung regex de tranh false positive (vd /tip, /clip, /recipe)
+                    if (u.indexOf('json') < 0) return false;
+                    if (/[/.](geoip|ipgeo)[/.?]/i.test(u)) return true;
+                    if (/\/(api\/)?(ip|geo|geolocation|location)(\/|\?|$)/i.test(u)) return true;
                     return false;
+                }
+
+                // Helper: dispatch event tuong thich addEventListener
+                function fireEvent(target, type) {
+                    try {
+                        var ev = new Event(type);
+                        target.dispatchEvent(ev);
+                    } catch(e) {}
                 }
 
                 // ===== Override fetch =====
                 var origFetch = window.fetch;
                 window.fetch = function(input, init) {
                     var url = (typeof input === 'string') ? input : (input && input.url);
-                    if (isIpGeoUrl(url)) {
+                    // Bypass header
+                    var bypass = false;
+                    if (init && init.headers) {
+                        var h = init.headers;
+                        if (h['X-GPSBrowser-Bypass'] === '1') bypass = true;
+                        if (typeof h.get === 'function' && h.get('X-GPSBrowser-Bypass') === '1') bypass = true;
+                    }
+                    if (!bypass && isIpGeoUrl(url)) {
                         console.log('[GPSBrowser] Faking fetch:', url);
                         var body = JSON.stringify(fakeJson);
                         return Promise.resolve(new Response(body, {
@@ -629,7 +671,7 @@ class MainActivity : AppCompatActivity() {
                             headers: {'Content-Type':'application/json'}
                         }));
                     }
-                    return origFetch.apply(this, arguments);
+                    return origFetch.call(window, input, init);
                 };
 
                 // ===== Override XMLHttpRequest =====
@@ -638,10 +680,21 @@ class MainActivity : AppCompatActivity() {
                     var xhr = new OrigXHR();
                     var origOpen = xhr.open;
                     var origSend = xhr.send;
+                    var origSetHeader = xhr.setRequestHeader;
                     var fakedUrl = null;
+                    var bypass = false;
+
+                    xhr.setRequestHeader = function(name, value) {
+                        if (name === 'X-GPSBrowser-Bypass' && value === '1') {
+                            bypass = true;
+                            fakedUrl = null;
+                            return;
+                        }
+                        return origSetHeader.apply(xhr, arguments);
+                    };
 
                     xhr.open = function(method, url) {
-                        if (isIpGeoUrl(url)) {
+                        if (!bypass && isIpGeoUrl(url)) {
                             fakedUrl = url;
                         }
                         return origOpen.apply(xhr, arguments);
@@ -650,15 +703,24 @@ class MainActivity : AppCompatActivity() {
                     xhr.send = function() {
                         if (fakedUrl) {
                             console.log('[GPSBrowser] Faking XHR:', fakedUrl);
+                            var jsonStr = JSON.stringify(fakeJson);
                             setTimeout(function() {
-                                Object.defineProperty(xhr, 'readyState', {value: 4, configurable: true});
-                                Object.defineProperty(xhr, 'status', {value: 200, configurable: true});
-                                Object.defineProperty(xhr, 'statusText', {value: 'OK', configurable: true});
-                                Object.defineProperty(xhr, 'responseText', {value: JSON.stringify(fakeJson), configurable: true});
-                                Object.defineProperty(xhr, 'response', {value: JSON.stringify(fakeJson), configurable: true});
-                                if (xhr.onreadystatechange) xhr.onreadystatechange();
-                                if (xhr.onload) xhr.onload();
-                            }, 50);
+                                try {
+                                    Object.defineProperty(xhr, 'readyState', {value: 4, configurable: true});
+                                    Object.defineProperty(xhr, 'status', {value: 200, configurable: true});
+                                    Object.defineProperty(xhr, 'statusText', {value: 'OK', configurable: true});
+                                    Object.defineProperty(xhr, 'responseText', {value: jsonStr, configurable: true});
+                                    Object.defineProperty(xhr, 'response', {value: jsonStr, configurable: true});
+                                    Object.defineProperty(xhr, 'responseType', {value: '', configurable: true});
+                                } catch(e) {}
+                                // Goi ca property handler VA dispatch event (cho addEventListener)
+                                if (xhr.onreadystatechange) try { xhr.onreadystatechange(); } catch(e) {}
+                                fireEvent(xhr, 'readystatechange');
+                                if (xhr.onload) try { xhr.onload(); } catch(e) {}
+                                fireEvent(xhr, 'load');
+                                if (xhr.onloadend) try { xhr.onloadend(); } catch(e) {}
+                                fireEvent(xhr, 'loadend');
+                            }, 0);
                             return;
                         }
                         return origSend.apply(xhr, arguments);
@@ -715,7 +777,10 @@ class MainActivity : AppCompatActivity() {
                 <script>
                     async function checkIP() {
                         try {
-                            const r = await fetch('https://free.freeipapi.com/api/json');
+                            // Bypass header de xem IP THAT (khong bi interceptor fake)
+                            const r = await fetch('https://free.freeipapi.com/api/json', {
+                                headers: {'X-GPSBrowser-Bypass': '1'}
+                            });
                             const raw = await r.json();
                             // Map freeipapi.com to common schema
                             const d = {
@@ -805,5 +870,15 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         CookieManager.getInstance().flush()
+    }
+
+    override fun onDestroy() {
+        // Tranh leak Activity context
+        try {
+            webView.stopLoading()
+            webView.removeAllViews()
+            webView.destroy()
+        } catch (e: Exception) { Log.w("GPSBrowser", "WebView destroy failed", e) }
+        super.onDestroy()
     }
 }
