@@ -487,7 +487,7 @@ class MainActivity : AppCompatActivity() {
                 <script>
                     async function checkIP() {
                         try {
-                            const r = await fetch('https://freeipapi.com/api/json');
+                            const r = await fetch('https://free.freeipapi.com/api/json');
                             const raw = await r.json();
                             // Map freeipapi.com to common schema
                             const d = {
