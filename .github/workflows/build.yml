@@ -28,8 +28,47 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: GPSBrowser-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Extract version info
+        id: version
+        run: |
+          VERSION_CODE=$(grep "versionCode" app/build.gradle | head -1 | awk '{print $2}')
+          VERSION_NAME=$(grep "versionName" app/build.gradle | head -1 | awk '{print $2}' | tr -d '"')
+          echo "code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION_NAME ($VERSION_CODE)"
+
+      - name: Generate version.json
+        run: |
+          CHANGELOG=$(git log -1 --pretty=%B | head -5 | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+          cat > gpsbrowser_version.json <<EOF
+          {
+            "version": "${{ steps.version.outputs.name }}",
+            "versionCode": ${{ steps.version.outputs.code }},
+            "url": "http://31.97.189.245/dl/GPSBrowser.apk",
+            "changelog": "$CHANGELOG"
+          }
+          EOF
+          cat gpsbrowser_version.json
+
+      - name: Publish APK + version.json to VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -z "$VPS_SSH_KEY" ]; then
+            echo "VPS_SSH_KEY secret not set, skipping publish"
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 31.97.189.245 >> ~/.ssh/known_hosts 2>/dev/null
+          scp -o StrictHostKeyChecking=no app/build/outputs/apk/debug/app-debug.apk root@31.97.189.245:/tmp/GPSBrowser.apk
+          scp -o StrictHostKeyChecking=no gpsbrowser_version.json root@31.97.189.245:/tmp/gpsbrowser_version.json
+          ssh -o StrictHostKeyChecking=no root@31.97.189.245 "chmod 644 /tmp/GPSBrowser.apk /tmp/gpsbrowser_version.json"
+          echo "Published: http://31.97.189.245/dl/GPSBrowser.apk"

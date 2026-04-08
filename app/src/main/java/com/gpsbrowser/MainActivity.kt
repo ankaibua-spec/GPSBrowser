@@ -61,6 +61,11 @@ class MainActivity : AppCompatActivity() {
         requestLocationPermission()
 
         webView.loadUrl(HOME_URL)
+
+        // Check update silent (delay 2s de khong block UI)
+        webView.postDelayed({
+            UpdateChecker(this).checkForUpdate(silent = true)
+        }, 2000)
     }
 
     // ========== Fixed location (custom coordinates) ==========
@@ -410,6 +415,10 @@ class MainActivity : AppCompatActivity() {
         btnForward.setOnClickListener { if (webView.canGoForward()) webView.goForward() }
         btnRefresh.setOnClickListener { webView.reload() }
         btnHome.setOnClickListener { webView.loadUrl(HOME_URL) }
+        btnHome.setOnLongClickListener {
+            UpdateChecker(this).checkForUpdate(silent = false)
+            true
+        }
 
         // Check IP - load trang hiển thị IP, location, ISP
         btnCheckIP.setOnClickListener { checkMyIP() }
