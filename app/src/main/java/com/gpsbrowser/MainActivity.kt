@@ -60,10 +60,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadFixedLocation() {
         val prefs = getSharedPreferences("gpsbrowser", Context.MODE_PRIVATE)
+        // Mac dinh BAT toa do co dinh lan dau
+        if (!prefs.contains("use_fixed")) {
+            prefs.edit()
+                .putBoolean("use_fixed", true)
+                .putFloat("fixed_lat", 10.404246840349387f)
+                .putFloat("fixed_lng", 107.11750153452158f)
+                .apply()
+        }
         useFixedLocation = prefs.getBoolean("use_fixed", false)
         if (useFixedLocation) {
-            currentLat = prefs.getFloat("fixed_lat", 0f).toDouble()
-            currentLng = prefs.getFloat("fixed_lng", 0f).toDouble()
+            currentLat = prefs.getFloat("fixed_lat", 10.404246840349387f).toDouble()
+            currentLng = prefs.getFloat("fixed_lng", 107.11750153452158f).toDouble()
             hasLocation = true
         }
     }
