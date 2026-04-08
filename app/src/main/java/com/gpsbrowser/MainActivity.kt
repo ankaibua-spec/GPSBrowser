@@ -428,12 +428,25 @@ class MainActivity : AppCompatActivity() {
                 <script>
                     async function checkIP() {
                         try {
-                            const r = await fetch('https://ipapi.co/json/');
-                            const d = await r.json();
-                            
+                            const r = await fetch('https://ipwho.is/');
+                            const raw = await r.json();
+                            if (raw.success === false) throw new Error(raw.message || 'API error');
+                            // Map ipwho.is response to ipapi.co schema
+                            const d = {
+                                ip: raw.ip,
+                                country_name: raw.country,
+                                country_code: raw.country_code,
+                                region: raw.region,
+                                city: raw.city,
+                                org: raw.connection ? raw.connection.isp : 'N/A',
+                                timezone: raw.timezone ? raw.timezone.id : 'N/A',
+                                latitude: raw.latitude,
+                                longitude: raw.longitude
+                            };
+
                             let gpsLat = ${if (hasLocation) currentLat.toString() else "null"};
                             let gpsLng = ${if (hasLocation) currentLng.toString() else "null"};
-                            
+
                             let ipLat = d.latitude;
                             let ipLng = d.longitude;
                             
