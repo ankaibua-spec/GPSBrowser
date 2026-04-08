@@ -2,7 +2,9 @@ package com.gpsbrowser
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.pm.PackageManager
+import androidx.appcompat.app.AlertDialog
 import android.graphics.Bitmap
 import android.location.Location
 import android.location.LocationListener
@@ -43,11 +45,81 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         initViews()
+        loadFixedLocation()
         setupWebView()
         setupNavigation()
+        setupFixedLocationDialog()
         requestLocationPermission()
 
         webView.loadUrl(HOME_URL)
+    }
+
+    // ========== Fixed location (custom coordinates) ==========
+
+    private var useFixedLocation = false
+
+    private fun loadFixedLocation() {
+        val prefs = getSharedPreferences("gpsbrowser", Context.MODE_PRIVATE)
+        useFixedLocation = prefs.getBoolean("use_fixed", false)
+        if (useFixedLocation) {
+            currentLat = prefs.getFloat("fixed_lat", 0f).toDouble()
+            currentLng = prefs.getFloat("fixed_lng", 0f).toDouble()
+            hasLocation = true
+        }
+    }
+
+    private fun setupFixedLocationDialog() {
+        if (useFixedLocation) {
+            txtLocation.text = "📌 ${String.format("%.6f", currentLat)}, ${String.format("%.6f", currentLng)} (cố định)"
+        }
+        txtLocation.setOnLongClickListener {
+            showFixedLocationDialog()
+            true
+        }
+    }
+
+    private fun showFixedLocationDialog() {
+        val input = EditText(this)
+        input.hint = "VD: 21.028511, 105.804817 (để trống = dùng GPS thật)"
+        val prefs = getSharedPreferences("gpsbrowser", Context.MODE_PRIVATE)
+        if (useFixedLocation) {
+            input.setText("$currentLat, $currentLng")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Đặt toạ độ cố định")
+            .setMessage("Dán toạ độ Google Maps (lat, lng).\nĐể trống → dùng GPS thật.")
+            .setView(input)
+            .setPositiveButton("OK") { _, _ ->
+                val text = input.text.toString().trim()
+                if (text.isEmpty()) {
+                    useFixedLocation = false
+                    prefs.edit().putBoolean("use_fixed", false).apply()
+                    Toast.makeText(this, "Đã tắt toạ độ cố định, dùng GPS thật", Toast.LENGTH_SHORT).show()
+                } else {
+                    try {
+                        val parts = text.replace(" ", "").split(",")
+                        val lat = parts[0].toDouble()
+                        val lng = parts[1].toDouble()
+                        currentLat = lat
+                        currentLng = lng
+                        hasLocation = true
+                        useFixedLocation = true
+                        prefs.edit()
+                            .putBoolean("use_fixed", true)
+                            .putFloat("fixed_lat", lat.toFloat())
+                            .putFloat("fixed_lng", lng.toFloat())
+                            .apply()
+                        txtLocation.text = "📌 ${String.format("%.6f", lat)}, ${String.format("%.6f", lng)} (cố định)"
+                        injectGeolocationOverride()
+                        webView.reload()
+                        Toast.makeText(this, "Đã đặt toạ độ cố định", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(this, "Sai định dạng. VD: 21.028511, 105.804817", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNegativeButton("Huỷ", null)
+            .show()
     }
 
     private fun initViews() {
@@ -205,6 +277,7 @@ class MainActivity : AppCompatActivity() {
 
         val locationListener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
+                if (useFixedLocation) return
                 currentLat = location.latitude
                 currentLng = location.longitude
                 hasLocation = true
@@ -237,7 +310,7 @@ class MainActivity : AppCompatActivity() {
             val lastGPS = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
             val lastNet = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
             val last = lastGPS ?: lastNet
-            if (last != null) {
+            if (last != null && !useFixedLocation) {
                 currentLat = last.latitude
                 currentLng = last.longitude
                 hasLocation = true
