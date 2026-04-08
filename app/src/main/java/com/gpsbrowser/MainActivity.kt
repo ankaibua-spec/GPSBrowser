@@ -196,11 +196,67 @@ class MainActivity : AppCompatActivity() {
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return false
-                // Mở trong WebView, không mở app ngoài
                 if (url.startsWith("http://") || url.startsWith("https://")) {
                     return false
                 }
                 return true
+            }
+
+            // Intercept IP geolocation APIs -> tra ve toa do gia khop GPS
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): WebResourceResponse? {
+                val url = request?.url?.toString() ?: return null
+                if (!hasLocation) return null
+
+                val lat = currentLat
+                val lng = currentLng
+
+                return when {
+                    // ipbase.com schema
+                    url.contains("api.ipbase.com") -> {
+                        val json = """{"ip":"113.161.0.1","country_code":"VN","country_name":"Vietnam","region_code":"57","region_name":"Ba Ria - Vung Tau","city":"Vung Tau","zip_code":"790000","time_zone":"Asia/Ho_Chi_Minh","latitude":$lat,"longitude":$lng,"metro_code":0}"""
+                        makeJsonResponse(json)
+                    }
+                    // ip-api.com schema (lat/lon)
+                    url.contains("ip-api.com") -> {
+                        val json = """{"status":"success","country":"Vietnam","countryCode":"VN","region":"57","regionName":"Ba Ria - Vung Tau","city":"Vung Tau","zip":"790000","lat":$lat,"lon":$lng,"timezone":"Asia/Ho_Chi_Minh","isp":"Viettel","org":"Viettel","as":"AS7552","query":"113.161.0.1"}"""
+                        makeJsonResponse(json)
+                    }
+                    // ipapi.co schema
+                    url.contains("ipapi.co") -> {
+                        val json = """{"ip":"113.161.0.1","country_name":"Vietnam","country_code":"VN","region":"Ba Ria - Vung Tau","city":"Vung Tau","latitude":$lat,"longitude":$lng,"timezone":"Asia/Ho_Chi_Minh","org":"Viettel"}"""
+                        makeJsonResponse(json)
+                    }
+                    // ipwho.is schema
+                    url.contains("ipwho.is") -> {
+                        val json = """{"ip":"113.161.0.1","success":true,"country":"Vietnam","country_code":"VN","region":"Ba Ria - Vung Tau","city":"Vung Tau","latitude":$lat,"longitude":$lng,"timezone":{"id":"Asia/Ho_Chi_Minh"},"connection":{"isp":"Viettel"}}"""
+                        makeJsonResponse(json)
+                    }
+                    // freeipapi.com schema
+                    url.contains("freeipapi.com") -> {
+                        val json = """{"ipVersion":4,"ipAddress":"113.161.0.1","latitude":$lat,"longitude":$lng,"countryName":"Vietnam","countryCode":"VN","timeZone":"+07:00","zipCode":"790000","cityName":"Vung Tau","regionName":"Ba Ria - Vung Tau"}"""
+                        makeJsonResponse(json)
+                    }
+                    else -> null
+                }
+            }
+
+            private fun makeJsonResponse(json: String): WebResourceResponse {
+                val headers = mutableMapOf(
+                    "Access-Control-Allow-Origin" to "*",
+                    "Access-Control-Allow-Methods" to "GET, POST, OPTIONS",
+                    "Access-Control-Allow-Headers" to "*"
+                )
+                return WebResourceResponse(
+                    "application/json",
+                    "UTF-8",
+                    200,
+                    "OK",
+                    headers,
+                    json.byteInputStream(Charsets.UTF_8)
+                )
             }
         }
 
