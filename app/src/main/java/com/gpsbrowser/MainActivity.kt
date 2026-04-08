@@ -36,7 +36,7 @@ class MainActivity : AppCompatActivity() {
     private var hasLocation = false
 
     private val LOCATION_PERMISSION_CODE = 1001
-    private val HOME_URL = "https://www.google.com"
+    private val HOME_URL = "https://App.alpha-ecc.com"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
